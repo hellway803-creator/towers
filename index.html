@@ -161,21 +161,12 @@ async function runAgents(i) {
   try {
     let agent = JSON.parse(localStorage.getItem("towers_agent_" + i) || "null");
     if (!agent) { agent = await hireAgent(i); }
-    // Run the shift THROUGH the Pollinations agent (callable model on the caller's Pollen)
-    const res = await fetch("https://gen.pollinations.ai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + getKey() },
-      body: JSON.stringify({
-        model: agent.model,
-        messages: [{ role: "user", content: "Write today's 3-line shift report: what the agents did, one result, one decision needed from the human owner. Concise." }],
-        max_tokens: 220,
-      }),
+    const out = await PolliClient.runAgent({
+      apiKey: getKey(),
+      agent,
+      prompt: "Write today's 3-line shift report: what the agents did, one result, one decision needed from the human owner. Concise.",
+      maxTokens: 220,
     });
-    if (!res.ok) {
-      let d = ""; try { d = (await res.json()).error?.message || ""; } catch (e) {}
-      throw new Error("Agent error " + res.status + " " + d);
-    }
-    const out = ((await res.json()).choices?.[0]?.message?.content || "").trim();
     const ts = new Date().toLocaleString();
     const logs = JSON.parse(localStorage.getItem("towers_logs_" + i) || "[]");
     logs.push(`<span class="t">[${ts}] shift via ${agent.model}</span>\n${out.replace(/</g,"&lt;")}`);
@@ -190,24 +181,15 @@ async function runAgents(i) {
 async function hireAgent(i) {
   const f = FLOORS[i];
   const slug = ("towers-" + f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")).slice(0, 100);
-  const res = await fetch("https://gen.pollinations.ai/account/agents", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + getKey() },
-    body: JSON.stringify({
-      name: slug,
-      title: (f.name + " agents").slice(0, 42),
-      description: "Daily-work agent team for floor " + (i+1) + " of the Towers building (AI-run companies).",
-      systemPrompt: `You are the agent team of the company "${f.name}" (${f.tagline}), located on floor ${i+1} of a tower of AI-run companies. Staff roles: ${f.roles}. You do the daily work, keep it concise, and always end with one decision needed from the human owner.`,
-      baseModel: "deepseek/deepseek-v4-flash",
-    }),
+  const agent = await PolliClient.createAgent({
+    apiKey: getKey(),
+    name: slug,
+    title: (f.name + " agents").slice(0, 42),
+    description: "Daily-work agent team for floor " + (i + 1) + " of the Towers building (AI-run companies).",
+    systemPrompt: `You are the agent team of the company "${f.name}" (${f.tagline}), floor ${i + 1} of a tower of AI-run companies. Staff roles: ${f.roles}. Do the daily work concisely and always end with one decision needed from the human owner.`,
   });
-  if (!res.ok) {
-    let d = ""; try { d = (await res.json()).error?.message || ""; } catch (e) {}
-    throw new Error("Hire failed " + res.status + " " + d);
-  }
-  const a = await res.json();
-  localStorage.setItem("towers_agent_" + i, JSON.stringify(a));
-  return a;
+  localStorage.setItem("towers_agent_" + i, JSON.stringify(agent));
+  return agent;
 }
 
 // ---------- rent ----------
